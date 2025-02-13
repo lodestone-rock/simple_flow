@@ -41,20 +41,10 @@ class RMSNorm(nn.Module):
     def __init__(self, dim, eps=1e-6):
         super().__init__()
         self.scale = nn.Parameter(torch.ones(dim))
-        self.use_compiled = False
         self.eps = eps
 
-    def _forward(self, x):
-        x_dtype = x.dtype
-        x = x.float()
-        rrms = torch.rsqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps)
-        return (x * rrms).to(dtype=x_dtype) * self.scale
-
     def forward(self, x):
-        if self.use_compiled:
-            return torch.compile(self._forward)(x)
-        else:
-            return self._forward(x)
+        return F.rms_norm(x, self.scale.shape, weight=self.scale, eps=self.eps)
 
 
 class AttentionBlock(nn.Module):
