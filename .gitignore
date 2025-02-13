@@ -1,2 +1,7 @@
 init.sh
 /.vscode
+/mnist
+/preview
+__pycache__
+/wandb
+*.pth

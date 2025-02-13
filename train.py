@@ -13,7 +13,7 @@ import numpy as np
 from torchvision.utils import save_image
 from torchvision import datasets, transforms
 
-from src.flow import FlowCond, image_flatten, image_unflatten, cosine_optimal_transport
+from src.flow import Flow, image_flatten, image_unflatten, cosine_optimal_transport
 from torchastic import Compass
 
 torch.manual_seed(0)
@@ -42,7 +42,7 @@ dataset = datasets.CIFAR10(
 )
 loader = DataLoader(dataset, batch_size=training_config["batch_size"], shuffle=True)
 
-model = FlowCond(
+model = Flow(
     input_dim=12,
     output_dim=12,
     dim=128,
