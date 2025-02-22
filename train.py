@@ -37,14 +37,14 @@ transform = transforms.Compose(
     ]
 )
 
-dataset = datasets.CIFAR10(
+dataset = datasets.MNIST(
     root="mnist/", train=True, transform=transform, download=True
 )
 loader = DataLoader(dataset, batch_size=training_config["batch_size"], shuffle=True)
 
 model = Flow(
-    input_dim=12,
-    output_dim=12,
+    input_dim=4,
+    output_dim=4,
     dim=128,
     num_layers=10,
     num_heads=8,

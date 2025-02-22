@@ -133,22 +133,20 @@ class Flow(nn.Module):
     def device(self):
         return next(self.parameters()).device
 
-    def forward(self, x, timesteps, class_embed, attention_mask=None):
+    def forward(self, x, class_embed, attention_mask=None):
         B = x.shape[0]
         # timesteps [B, 1]
         # use simple projection here, nothing fancy
-        time_token = self.timestep_vector(timesteps[:, None])[:, None, :]
-        # some non linearity because why not
-        time_token = self.timestep_proj(time_token)
         # project image patch to model dim
         x = self.input_layer(x)
         # concatenate time token and use it as a guidance vector
         class_vec = self.class_embed(class_embed)[:, None, :]
-        x = torch.cat((time_token, class_vec, x), dim=1)
+        # x = torch.cat((time_token, class_vec, x), dim=1)
+        x = torch.cat((class_vec, x), dim=1)
         # Forward through transformer network
         x = self.transformer(x, attention_mask)
         # remove the guidance vector
-        x_out = x[:, 2:, ...]
+        x_out = x[:, 1:, ...]
 
         return x_out
 
@@ -164,7 +162,7 @@ class Flow(nn.Module):
         # Compute noised data points
         xt = x0 * (1 - t[:, None, None]) + batch * t[:, None, None]
         # Forward pass and compute noise to image vector
-        v = self.forward(xt, t, class_label)
+        v = self.forward(xt, class_label)
         # mse loss
 
         return torch.mean(torch.mean((v - (batch - x0)) ** 2, dim=(1, 2)))
@@ -180,7 +178,7 @@ class Flow(nn.Module):
             if ((num_steps - i) - skip_last_n) == 0:
                 break
             with torch.no_grad():
-                v = self.forward(x, t[i].repeat(x.shape[0]), cond)
+                v = self.forward(x, cond)
                 x = x + v * (t[i] - t[i - 1])
 
             if return_intermediates:
@@ -208,9 +206,8 @@ class Flow(nn.Module):
             if ((num_steps - i) - skip_last_n) == 0:
                 break
             with torch.no_grad():
-                v = self.forward(x, t[i].repeat(x.shape[0]), pos_cond)
-                v_neg = self.forward(x, t[i].repeat(x.shape[0]), neg_cond)
-                # cond + cfg_scale * (cond - uncond)
+                v = self.forward(x, pos_cond)
+                v_neg = self.forward(x, neg_cond)
                 v = v + cfg_scale * (v - v_neg)
                 x = x + v * (t[i] - t[i - 1])
 
