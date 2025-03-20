@@ -5,6 +5,7 @@ from torch.utils.checkpoint import checkpoint
 import math
 
 
+# kernel (if you want to optimize the code, optimize all of these kernel!)
 def rotate_half(x):
     x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
     return torch.cat((-x2, x1), dim=-1)
@@ -14,6 +15,10 @@ def apply_rotary_pos_emb(q, k, cos, sin, offset=0):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
+
+
+def soft_clamp(x, scale, alpha, shift):
+    return scale * F.tanh(x * alpha) + shift
 
 
 class RotaryPositionalEmbedding(nn.Module):
@@ -37,14 +42,19 @@ class RotaryPositionalEmbedding(nn.Module):
         )
 
 
-class RMSNorm(nn.Module):
-    def __init__(self, dim, eps=1e-6):
+class SoftClamp(nn.Module):
+    def __init__(self, dim):
         super().__init__()
+        self.alpha = nn.Parameter(torch.ones(1) * 0.5)
         self.scale = nn.Parameter(torch.ones(dim))
-        self.eps = eps
+        self.shift = nn.Parameter(torch.zeros(dim))
+        self.use_compiled = False
 
     def forward(self, x):
-        return F.rms_norm(x, self.scale.shape, weight=self.scale, eps=self.eps)
+        if self.use_compiled:
+            return torch.compile(soft_clamp)(x, self.scale, self.alpha, self.shift)
+        else:
+            return soft_clamp(x, self.scale, self.alpha, self.shift)
 
 
 class AttentionBlock(nn.Module):
@@ -57,11 +67,11 @@ class AttentionBlock(nn.Module):
         self.qkv = nn.Linear(dim, dim * 3, bias=False)
         # enabling bias here so the model has a freedom to shift the activation
         self.wo = nn.Linear(dim, dim, bias=True)
-        self.layer_norm = RMSNorm(dim, eps=1e-6)
+        self.layer_norm = SoftClamp(dim)
         self.rope = RotaryPositionalEmbedding(self.head_dim, max_seq_len)
 
-        self.q_norm = RMSNorm(dim, eps=1e-6)
-        self.k_norm = RMSNorm(dim, eps=1e-6)
+        self.q_norm = SoftClamp(dim)
+        self.k_norm = SoftClamp(dim)
 
         self.add_module("layer_norm", self.layer_norm)
 
@@ -120,7 +130,7 @@ class GLU(nn.Module):
         self.wi_1 = nn.Linear(dim, dim * exp_fac, bias=False)
         # enabling bias here so the model has a freedom to shift the activation
         self.wo = nn.Linear(dim * exp_fac, dim, bias=True)
-        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
+        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False)
         nn.init.zeros_(self.wo.weight)
         self.use_compiled = False
 
@@ -173,7 +183,7 @@ class TransformerNetwork(nn.Module):
                 for _ in range(num_layers)
             ]
         )
-        self.out_norm = RMSNorm(dim, eps=1e-6)
+        self.out_norm = SoftClamp(dim)
         if final_head:
             self.output_layer = nn.Linear(dim, output_dim)
         else:

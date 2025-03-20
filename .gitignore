@@ -5,3 +5,5 @@ init.sh
 __pycache__
 /wandb
 *.pth
+*.png
+*.jpg
